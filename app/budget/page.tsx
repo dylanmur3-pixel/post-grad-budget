@@ -72,7 +72,9 @@ export default function BudgetPage() {
       if (!res.ok) {
         setSaveError(`Save failed (${res.status}): ${json.error ?? text ?? 'unknown error'}`)
       } else {
-        await fetchData()
+        setBudgets((prev) =>
+          prev.map((b) => (b.id === id ? { ...b, monthly_target: value } : b))
+        )
         setEditingId(null)
       }
     } catch (err: any) {
