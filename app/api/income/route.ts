@@ -1,0 +1,40 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
+
+// GET /api/income — fetch income (public)
+// Query params: month_year=2026-06
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const monthYear = searchParams.get('month_year')
+
+  let query = supabase.from('income').select('*').order('date', { ascending: false })
+  if (monthYear) query = query.eq('month_year', monthYear)
+
+  const { data, error } = await query
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json(data)
+}
+
+// POST /api/income — add income entry (editor only)
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const body = await req.json()
+  const { date, source, amount, month_year, notes } = body
+
+  if (!date || !source || !amount || !month_year) {
+    return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('income')
+    .insert({ date, source, amount, month_year, notes })
+    .select()
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json(data, { status: 201 })
+}
