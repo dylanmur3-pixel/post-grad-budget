@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
 
 // GET /api/income — fetch income (public)
 // Query params: month_year=2026-06
@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const monthYear = searchParams.get('month_year')
 
-  let query = supabase.from('income').select('*').order('date', { ascending: false })
+  let query = supabaseAdmin.from('income').select('*').order('date', { ascending: false })
   if (monthYear) query = query.eq('month_year', monthYear)
 
   const { data, error } = await query
