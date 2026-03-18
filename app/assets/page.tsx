@@ -40,7 +40,7 @@ export default function AssetsPage() {
   const handleDelete = async (id: number) => {
     if (!confirm('Delete this asset?')) return
     await fetch(`/api/assets/${id}`, { method: 'DELETE' })
-    fetchAssets()
+    setAssets((prev) => prev.filter((a) => a.id !== id))
   }
 
   const totalNetWorth = assets.reduce((s, a) => s + a.current_value, 0)
@@ -165,9 +165,9 @@ export default function AssetsPage() {
         title="Add Asset"
       >
         <AssetForm
-          onSuccess={() => {
+          onSuccess={(asset) => {
+            setAssets((prev) => [...prev, asset])
             setShowAddModal(false)
-            fetchAssets()
           }}
           onCancel={() => setShowAddModal(false)}
         />
@@ -182,9 +182,9 @@ export default function AssetsPage() {
         {editingAsset && (
           <AssetForm
             initialData={editingAsset}
-            onSuccess={() => {
+            onSuccess={(asset) => {
+              setAssets((prev) => prev.map((a) => (a.id === asset.id ? asset : a)))
               setEditingAsset(null)
-              fetchAssets()
             }}
             onCancel={() => setEditingAsset(null)}
           />

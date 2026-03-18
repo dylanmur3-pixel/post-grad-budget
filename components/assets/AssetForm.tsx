@@ -9,7 +9,7 @@ import type { Asset } from '@/lib/types'
 
 interface AssetFormProps {
   initialData?: Partial<Asset>
-  onSuccess?: () => void
+  onSuccess?: (asset: Asset) => void
   onCancel?: () => void
 }
 
@@ -59,13 +59,13 @@ export function AssetForm({ initialData, onSuccess, onCancel }: AssetFormProps) 
         body: JSON.stringify(payload),
       })
 
+      const data = await res.json()
       if (!res.ok) {
-        const data = await res.json()
         setError(data.error ?? 'Something went wrong.')
         return
       }
 
-      if (onSuccess) onSuccess()
+      if (onSuccess) onSuccess(data)
     } catch {
       setError('Network error. Please try again.')
     } finally {
