@@ -27,8 +27,8 @@ export default function BudgetPage() {
 
   const fetchData = async () => {
     const [budRes, expRes] = await Promise.all([
-      fetch('/api/budget').then((r) => r.json()),
-      fetch(`/api/expenses?month_year=${monthYear}`).then((r) => r.json()),
+      fetch('/api/budget', { cache: 'no-store' }).then((r) => r.json()),
+      fetch(`/api/expenses?month_year=${monthYear}`, { cache: 'no-store' }).then((r) => r.json()),
     ])
     setBudgets(Array.isArray(budRes) ? budRes : [])
     setExpenses(Array.isArray(expRes) ? expRes : [])
