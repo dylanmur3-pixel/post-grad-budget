@@ -23,6 +23,7 @@ export default function BudgetPage() {
   const [editValue, setEditValue] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const fetchData = async () => {
     const [budRes, expRes] = await Promise.all([
@@ -59,14 +60,22 @@ export default function BudgetPage() {
     if (isNaN(value) || value < 0) return
 
     setSaving(true)
-    const res = await fetch('/api/budget', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, monthly_target: value }),
-    })
-    if (res.ok) {
-      await fetchData()
-      setEditingId(null)
+    setSaveError('')
+    try {
+      const res = await fetch('/api/budget', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, monthly_target: value }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setSaveError(`Save failed (${res.status}): ${json.error ?? 'unknown error'}`)
+      } else {
+        await fetchData()
+        setEditingId(null)
+      }
+    } catch (err: any) {
+      setSaveError(`Network error: ${err.message}`)
     }
     setSaving(false)
   }
@@ -114,6 +123,10 @@ export default function BudgetPage() {
         </CardHeader>
         <BudgetVsActualBar data={barData} />
       </Card>
+
+      {saveError && (
+        <div className="rounded bg-red-900/30 px-4 py-3 text-sm text-red-400">{saveError}</div>
+      )}
 
       {/* Detailed table by category */}
       {loading ? (
