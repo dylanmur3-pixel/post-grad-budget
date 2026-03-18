@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '@/lib/supabase'
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/trends — compute monthly summaries live from expenses + app_settings
 // Query params: months=6
 export async function GET(req: NextRequest) {
@@ -63,5 +65,5 @@ export async function GET(req: NextRequest) {
   // Only return months that have any expenses
   const withData = summaries.filter((s) => s.total_expenses > 0)
 
-  return NextResponse.json(withData)
+  return NextResponse.json(withData, { headers: { 'Cache-Control': 'no-store' } })
 }
