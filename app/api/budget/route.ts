@@ -17,23 +17,28 @@ export async function GET() {
 
 // PUT /api/budget — update a budget target (editor only)
 export async function PUT(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await req.json()
-  const { id, monthly_target, notes } = body
+    const body = await req.json()
+    const { id, monthly_target, notes } = body
 
-  if (!id || monthly_target === undefined) {
-    return NextResponse.json({ error: 'Missing id or monthly_target' }, { status: 400 })
+    if (!id || monthly_target === undefined) {
+      return NextResponse.json({ error: 'Missing id or monthly_target' }, { status: 400 })
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('budget_targets')
+      .update({ monthly_target, notes, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data)
+  } catch (err: any) {
+    console.error('PUT /api/budget error:', err)
+    return NextResponse.json({ error: err.message ?? 'Internal server error' }, { status: 500 })
   }
-
-  const { data, error } = await supabaseAdmin
-    .from('budget_targets')
-    .update({ monthly_target, notes, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .single()
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
 }

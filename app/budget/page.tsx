@@ -67,9 +67,10 @@ export default function BudgetPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, monthly_target: value }),
       })
-      const json = await res.json()
+      const text = await res.text()
+      const json = text ? JSON.parse(text) : {}
       if (!res.ok) {
-        setSaveError(`Save failed (${res.status}): ${json.error ?? 'unknown error'}`)
+        setSaveError(`Save failed (${res.status}): ${json.error ?? text ?? 'unknown error'}`)
       } else {
         await fetchData()
         setEditingId(null)
