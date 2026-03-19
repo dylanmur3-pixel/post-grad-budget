@@ -16,6 +16,7 @@ export const SUBCATEGORIES: Record<Category, string[]> = {
     'Rent',
     'Electric + Gas',
     'Internet',
+    'Phone',
     "Renter's Insurance",
   ],
   'Food & Health': [
