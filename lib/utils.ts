@@ -47,19 +47,19 @@ export function calcSavingsRate(income: number, expenses: number): number {
 // Calculate budget percentage used (for progress bars)
 export function calcBudgetPct(actual: number, budget: number): number {
   if (budget <= 0) return 0
-  return Math.min(Math.round((actual / budget) * 100), 999)
+  return Math.min(Math.floor((actual / budget) * 100), 999)
 }
 
 // Return a color class based on budget percentage
 export function budgetStatusColor(pct: number): string {
-  if (pct >= 100) return 'text-red-400'
+  if (pct > 100) return 'text-red-400'
   if (pct >= 85) return 'text-yellow-400'
   return 'text-emerald-400'
 }
 
 // Return a progress bar color class based on percentage
 export function progressBarColor(pct: number): string {
-  if (pct >= 100) return 'bg-red-500'
+  if (pct > 100) return 'bg-red-500'
   if (pct >= 85) return 'bg-yellow-500'
   return 'bg-indigo-500'
 }

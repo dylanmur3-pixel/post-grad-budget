@@ -232,8 +232,10 @@ export default function BudgetPage() {
                           <td className="py-3 text-right">
                             {pct === 0 ? (
                               <Badge variant="neutral">No spend</Badge>
-                            ) : pct >= 100 ? (
-                              <Badge variant="red">Over {pct}%</Badge>
+                            ) : pct > 100 ? (
+                              <Badge variant="red">Over 100%</Badge>
+                            ) : pct === 100 ? (
+                              <Badge variant="green">On budget</Badge>
                             ) : pct >= 85 ? (
                               <Badge variant="yellow">{pct}%</Badge>
                             ) : (

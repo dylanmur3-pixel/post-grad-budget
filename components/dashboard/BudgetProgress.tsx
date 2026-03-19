@@ -33,7 +33,7 @@ export function BudgetProgress({ category, actual, budget }: BudgetProgressProps
         />
       </div>
       <p className={cn('text-right text-xs', textColor)}>
-        {pct >= 100 ? `${formatCurrency(actual - budget)} over budget` : `${100 - pct}% remaining`}
+        {pct > 100 ? `${formatCurrency(actual - budget)} over budget` : pct === 100 ? 'On budget' : `${100 - pct}% remaining`}
       </p>
     </div>
   )
