@@ -26,6 +26,7 @@ export default function DashboardPage() {
   const [budgets, setBudgets] = useState<BudgetTarget[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [incomeEntries, setIncomeEntries] = useState<{ amount: number }[]>([])
   const [loading, setLoading] = useState(true)
   const [showTakeHomeModal, setShowTakeHomeModal] = useState(false)
   const [takeHomeInput, setTakeHomeInput] = useState('')
@@ -38,11 +39,13 @@ export default function DashboardPage() {
       fetch('/api/budget').then((r) => r.json()),
       fetch('/api/assets').then((r) => r.json()),
       fetch('/api/settings').then((r) => r.json()),
-    ]).then(([exp, bud, ass, set]) => {
+      fetch(`/api/income?month_year=${monthYear}`).then((r) => r.json()),
+    ]).then(([exp, bud, ass, set, inc]) => {
       setExpenses(Array.isArray(exp) ? exp : [])
       setBudgets(Array.isArray(bud) ? bud : [])
       setAssets(Array.isArray(ass) ? ass : [])
       if (set && !set.error) setSettings(set)
+      setIncomeEntries(Array.isArray(inc) ? inc : [])
       setLoading(false)
     })
   }, [monthYear])
@@ -62,9 +65,11 @@ export default function DashboardPage() {
   }, {} as Record<string, number>)
 
   const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0)
+  const loggedIncome = incomeEntries.reduce((s, i) => s + i.amount, 0)
   const takeHome = settings?.monthly_take_home ?? 4805
-  const remaining = takeHome - totalExpenses
-  const savingsRate = calcSavingsRate(takeHome, totalExpenses)
+  const effectiveIncome = loggedIncome > 0 ? loggedIncome : takeHome
+  const remaining = effectiveIncome - totalExpenses
+  const savingsRate = calcSavingsRate(effectiveIncome, totalExpenses)
   const netWorth = assets.reduce((s, a) => s + a.current_value, 0)
 
   const barData = CATEGORIES.map((cat) => ({
@@ -121,9 +126,9 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div className="relative">
           <KPICard
-            label="Monthly Take-Home"
-            value={formatCurrency(takeHome)}
-            subtext="estimated after tax"
+            label="Monthly Income"
+            value={formatCurrency(effectiveIncome)}
+            subtext={loggedIncome > 0 ? 'from logged income' : 'estimated take-home'}
           />
           {isEditor && (
             <button
