@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: '/expenses', label: 'Expenses' },
   { href: '/income', label: 'Income' },
   { href: '/budget', label: 'Budget' },
+  { href: '/investments', label: 'Investments' },
   { href: '/assets', label: 'Assets' },
   { href: '/trends', label: 'Trends' },
 ]

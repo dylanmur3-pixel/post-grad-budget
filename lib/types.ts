@@ -75,3 +75,29 @@ export interface AppSettings {
 export type NewExpense = Omit<Expense, 'id' | 'created_at'>
 export type NewIncome = Omit<Income, 'id' | 'created_at'>
 export type NewAsset = Omit<Asset, 'id' | 'updated_at'>
+
+export interface Holding {
+  ticker: string
+  name: string
+  shares: number
+  buyPrice: number
+  currentPrice: number
+  currentValue: number
+  gainLoss: number
+  gainLossPct: number
+  costBasis: number
+}
+
+export interface PortfolioSnapshot {
+  date: string
+  total_value: number
+}
+
+export interface PortfolioSummary {
+  currentValue: number
+  costBasis: number
+  gainLoss: number
+  returnPct: number
+  history: PortfolioSnapshot[]
+  holdings: Holding[]
+}
