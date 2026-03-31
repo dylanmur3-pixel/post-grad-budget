@@ -9,8 +9,19 @@ import { PortfolioSummary, Holding, PortfolioSnapshot } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type Range = '1W' | '1M' | '3M' | '6M' | 'YTD' | 'All'
+type HoldingRange = '1D' | '1W' | '1M' | '6M' | 'YTD' | 'All'
 
 const RANGES: Range[] = ['1W', '1M', '3M', '6M', 'YTD', 'All']
+const HOLDING_RANGES: HoldingRange[] = ['1D', '1W', '1M', '6M', 'YTD', 'All']
+
+const HOLDING_RANGE_LABEL: Record<HoldingRange, string> = {
+  '1D': '1 Day',
+  '1W': '1 Week',
+  '1M': '1 Month',
+  '6M': '6 Months',
+  'YTD': 'YTD',
+  'All': 'All Time',
+}
 
 function filterHistory(history: PortfolioSnapshot[], range: Range): PortfolioSnapshot[] {
   if (range === 'All' || history.length === 0) return history
@@ -37,6 +48,7 @@ export default function InvestmentsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [range, setRange] = useState<Range>('All')
+  const [holdingRange, setHoldingRange] = useState<HoldingRange>('All')
 
   useEffect(() => {
     fetch('/api/investments')
@@ -136,20 +148,38 @@ export default function InvestmentsPage() {
           <Card>
             <CardHeader>
               <CardTitle>Individual Holdings</CardTitle>
-              <span className="text-xs text-[#555]">Since inception · 15-min delayed prices</span>
+              <div className="flex items-center gap-1">
+                {HOLDING_RANGES.map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setHoldingRange(r)}
+                    className={cn(
+                      'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                      holdingRange === r
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-[#666] hover:text-white hover:bg-[#2a2a2a]'
+                    )}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
             </CardHeader>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-[#2a2a2a]">
-                    {['Ticker', 'Name', 'Shares', 'Buy Price', 'Current Price', 'Value', 'Gain/Loss $', 'Gain/Loss %'].map((h) => (
+                    {['Ticker', 'Name', 'Shares', 'Buy Price', 'Current Price', 'Value', `${HOLDING_RANGE_LABEL[holdingRange]} Gain $`, `${HOLDING_RANGE_LABEL[holdingRange]} Gain %`].map((h) => (
                       <th key={h} className="pb-2 pr-4 text-left text-xs font-medium uppercase tracking-wider text-[#555] last:pr-0">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {data.holdings.map((h: Holding) => {
-                    const isUp = h.gainLoss >= 0
+                    const period = h.periodReturns?.[holdingRange]
+                    const gl = period?.gainLoss ?? null
+                    const glPct = period?.gainLossPct ?? null
+                    const isUp = gl !== null ? gl >= 0 : true
                     return (
                       <tr key={h.ticker} className="border-b border-[#1f1f1f] last:border-0">
                         <td className="py-3 pr-4 font-bold text-white">{h.ticker}</td>
@@ -158,16 +188,38 @@ export default function InvestmentsPage() {
                         <td className="py-3 pr-4 tabular-nums text-[#888]">{formatCurrency(h.buyPrice, true)}</td>
                         <td className="py-3 pr-4 tabular-nums text-white">{formatCurrency(h.currentPrice, true)}</td>
                         <td className="py-3 pr-4 tabular-nums text-white">{formatCurrency(h.currentValue, true)}</td>
-                        <td className={cn('py-3 pr-4 tabular-nums font-medium', isUp ? 'text-emerald-400' : 'text-red-400')}>
-                          {isUp ? '+' : ''}{formatCurrency(h.gainLoss, true)}
+                        <td className={cn('py-3 pr-4 tabular-nums font-medium', gl === null ? 'text-[#555]' : isUp ? 'text-emerald-400' : 'text-red-400')}>
+                          {gl === null ? 'N/A' : `${isUp ? '+' : ''}${formatCurrency(gl, true)}`}
                         </td>
-                        <td className={cn('py-3 tabular-nums font-medium', isUp ? 'text-emerald-400' : 'text-red-400')}>
-                          {isUp ? '+' : ''}{h.gainLossPct.toFixed(2)}%
+                        <td className={cn('py-3 tabular-nums font-medium', glPct === null ? 'text-[#555]' : isUp ? 'text-emerald-400' : 'text-red-400')}>
+                          {glPct === null ? 'N/A' : `${isUp ? '+' : ''}${glPct.toFixed(2)}%`}
                         </td>
                       </tr>
                     )
                   })}
                 </tbody>
+                <tfoot>
+                  {(() => {
+                    const validHoldings = data.holdings.filter((h: Holding) => h.periodReturns?.[holdingRange]?.gainLoss != null)
+                    const totalGl = validHoldings.reduce((sum: number, h: Holding) => sum + (h.periodReturns[holdingRange].gainLoss ?? 0), 0)
+                    const totalStartValue = validHoldings.reduce((sum: number, h: Holding) => sum + (h.currentValue - (h.periodReturns[holdingRange].gainLoss ?? 0)), 0)
+                    const totalGlPct = totalStartValue > 0 ? (totalGl / totalStartValue) * 100 : 0
+                    const isUp = totalGl >= 0
+                    return (
+                      <tr className="border-t-2 border-[#2a2a2a]">
+                        <td className="py-3 pr-4 text-xs font-semibold uppercase tracking-wider text-[#555]">Total</td>
+                        <td colSpan={4} />
+                        <td className="py-3 pr-4 tabular-nums font-semibold text-white">{formatCurrency(data.currentValue, true)}</td>
+                        <td className={cn('py-3 pr-4 tabular-nums font-semibold', isUp ? 'text-emerald-400' : 'text-red-400')}>
+                          {isUp ? '+' : ''}{formatCurrency(totalGl, true)}
+                        </td>
+                        <td className={cn('py-3 tabular-nums font-semibold', isUp ? 'text-emerald-400' : 'text-red-400')}>
+                          {isUp ? '+' : ''}{totalGlPct.toFixed(2)}%
+                        </td>
+                      </tr>
+                    )
+                  })()}
+                </tfoot>
               </table>
             </div>
           </Card>

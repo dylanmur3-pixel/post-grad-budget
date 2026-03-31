@@ -76,6 +76,11 @@ export type NewExpense = Omit<Expense, 'id' | 'created_at'>
 export type NewIncome = Omit<Income, 'id' | 'created_at'>
 export type NewAsset = Omit<Asset, 'id' | 'updated_at'>
 
+export interface PeriodReturn {
+  gainLoss: number | null
+  gainLossPct: number | null
+}
+
 export interface Holding {
   ticker: string
   name: string
@@ -86,6 +91,8 @@ export interface Holding {
   gainLoss: number
   gainLossPct: number
   costBasis: number
+  dateBought: string
+  periodReturns: Record<string, PeriodReturn>
 }
 
 export interface PortfolioSnapshot {

@@ -3,6 +3,48 @@ import { supabaseAdmin } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 
+// Fetch 1 year of daily closing prices for a ticker from Yahoo Finance (unofficial free API).
+async function fetchYahooHistory(ticker: string): Promise<Array<{ ts: number; close: number }>> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=1y&interval=1d`
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const json = await res.json()
+    const result = json?.chart?.result?.[0]
+    if (!result) return []
+    const timestamps: number[] = result.timestamp ?? []
+    const closes: number[] = result.indicators?.quote?.[0]?.close ?? []
+    return timestamps
+      .map((t: number, i: number) => ({ ts: t, close: closes[i] }))
+      .filter((d) => d.close != null && !isNaN(d.close))
+  } catch {
+    return []
+  }
+}
+
+// Return the most recent closing price at or before a target date.
+function priceAtDate(history: Array<{ ts: number; close: number }>, target: Date): number | null {
+  const targetTs = Math.floor(target.getTime() / 1000)
+  const filtered = history.filter((d) => d.ts <= targetTs)
+  if (filtered.length === 0) return null
+  return filtered[filtered.length - 1].close
+}
+
+// Calculate gain/loss for a holding over a period given a historical reference price.
+function calcPeriodReturn(
+  shares: number,
+  currentPrice: number,
+  historicalPrice: number | null
+): { gainLoss: number | null; gainLossPct: number | null } {
+  if (historicalPrice === null || historicalPrice === 0) return { gainLoss: null, gainLossPct: null }
+  const gl = (currentPrice - historicalPrice) * shares
+  const glPct = ((currentPrice - historicalPrice) / historicalPrice) * 100
+  return { gainLoss: Math.round(gl * 100) / 100, gainLossPct: Math.round(glPct * 100) / 100 }
+}
+
 // Parse a CSV string into rows of string arrays.
 // Handles quoted fields that contain commas.
 function parseCSV(text: string): string[][] {
@@ -78,6 +120,7 @@ export async function GET() {
       gainLoss: parseMoney(row[6]),
       gainLossPct: Math.round(parseFloat(row[7]) * 10000) / 100,
       costBasis: isNaN(cost) ? 0 : cost,
+      dateBought: (row[9] ?? '').trim(),
     })
   }
 
@@ -109,6 +152,42 @@ export async function GET() {
     return NextResponse.json({ error: histError.message }, { status: 500 })
   }
 
+  // 5. Fetch Yahoo Finance price history for each holding in parallel, then
+  //    calculate period returns (1D, 1W, 1M, 6M, YTD) per holding.
+  const yahooData = await Promise.all(
+    holdings.map(async (h) => ({ ticker: h.ticker, hist: await fetchYahooHistory(h.ticker) }))
+  )
+  const histMap = new Map(yahooData.map((r) => [r.ticker, r.hist]))
+
+  const now = new Date()
+  // Reference date for each period: end-of-day on the target calendar date.
+  const periodDates: Record<string, Date> = {
+    '1D': (() => { const d = new Date(now); d.setDate(d.getDate() - 1); d.setHours(23, 59, 59); return d })(),
+    '1W': (() => { const d = new Date(now); d.setDate(d.getDate() - 7); d.setHours(23, 59, 59); return d })(),
+    '1M': (() => { const d = new Date(now); d.setMonth(d.getMonth() - 1); d.setHours(23, 59, 59); return d })(),
+    '6M': (() => { const d = new Date(now); d.setMonth(d.getMonth() - 6); d.setHours(23, 59, 59); return d })(),
+    'YTD': new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59), // Dec 31 of prior year
+  }
+
+  const enrichedHoldings = holdings.map((h) => {
+    const hist = histMap.get(h.ticker) ?? []
+    const purchaseDate = h.dateBought ? new Date(h.dateBought + 'T00:00:00') : null
+    const periodReturns: Record<string, { gainLoss: number | null; gainLossPct: number | null }> = {
+      All: { gainLoss: h.gainLoss, gainLossPct: h.gainLossPct },
+    }
+    for (const [range, date] of Object.entries(periodDates)) {
+      // If the period started before the purchase date, cap at buy price
+      // so it shows return since purchase rather than market return before ownership.
+      if (purchaseDate && date < purchaseDate) {
+        periodReturns[range] = calcPeriodReturn(h.shares, h.currentPrice, h.buyPrice)
+      } else {
+        const price = priceAtDate(hist, date)
+        periodReturns[range] = calcPeriodReturn(h.shares, h.currentPrice, price)
+      }
+    }
+    return { ...h, periodReturns }
+  })
+
   return NextResponse.json(
     {
       currentValue: Math.round(currentValue * 100) / 100,
@@ -116,7 +195,7 @@ export async function GET() {
       gainLoss: Math.round(gainLoss * 100) / 100,
       returnPct: Math.round(returnPct * 100) / 100,
       history: history ?? [],
-      holdings,
+      holdings: enrichedHoldings,
     },
     { headers: { 'Cache-Control': 'no-store' } }
   )
