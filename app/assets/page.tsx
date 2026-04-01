@@ -17,6 +17,13 @@ const assetTypeBadge: Record<string, 'indigo' | 'green' | 'yellow'> = {
   Retirement: 'yellow',
 }
 
+// Auto-tracked investment accounts pulled live from the investments APIs.
+// These are read-only and never stored in the assets table.
+const AUTO_TRACKED = [
+  { name: 'ETF Portfolio', type: 'Investment' as const, apiPath: '/api/investments' },
+  { name: 'Roth IRA', type: 'Retirement' as const, apiPath: '/api/investments/roth-ira' },
+]
+
 export default function AssetsPage() {
   const { data: session } = useSession()
   const isEditor = !!session
@@ -26,15 +33,29 @@ export default function AssetsPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
 
-  const fetchAssets = async () => {
-    const res = await fetch('/api/assets')
-    const data = await res.json()
-    setAssets(Array.isArray(data) ? data : [])
+  // Live values for auto-tracked investment accounts
+  const [autoValues, setAutoValues] = useState<Record<string, number | null>>({
+    'ETF Portfolio': null,
+    'Roth IRA': null,
+  })
+
+  const fetchAll = async () => {
+    const [assetsRes, etfRes, rothRes] = await Promise.all([
+      fetch('/api/assets').then((r) => r.json()),
+      fetch('/api/investments').then((r) => r.json()).catch(() => null),
+      fetch('/api/investments/roth-ira').then((r) => r.json()).catch(() => null),
+    ])
+
+    setAssets(Array.isArray(assetsRes) ? assetsRes : [])
+    setAutoValues({
+      'ETF Portfolio': typeof etfRes?.currentValue === 'number' ? etfRes.currentValue : null,
+      'Roth IRA': typeof rothRes?.currentValue === 'number' ? rothRes.currentValue : null,
+    })
     setLoading(false)
   }
 
   useEffect(() => {
-    fetchAssets()
+    fetchAll()
   }, [])
 
   const handleDelete = async (id: number) => {
@@ -43,7 +64,9 @@ export default function AssetsPage() {
     setAssets((prev) => prev.filter((a) => a.id !== id))
   }
 
-  const totalNetWorth = assets.reduce((s, a) => s + a.current_value, 0)
+  // Sum manual assets + auto-tracked investment accounts
+  const autoTotal = Object.values(autoValues).reduce<number>((s, v) => s + (v ?? 0), 0)
+  const totalNetWorth = assets.reduce((s, a) => s + a.current_value, 0) + autoTotal
 
   const byType = ASSET_TYPES.reduce((acc, type) => {
     acc[type] = assets.filter((a) => a.asset_type === type)
@@ -51,9 +74,20 @@ export default function AssetsPage() {
   }, {} as Record<string, Asset[]>)
 
   const totalByType = ASSET_TYPES.reduce((acc, type) => {
-    acc[type] = byType[type].reduce((s, a) => s + a.current_value, 0)
+    const manualTotal = byType[type].reduce((s, a) => s + a.current_value, 0)
+    const autoForType = AUTO_TRACKED.filter((a) => a.type === type)
+      .reduce((s, a) => s + (autoValues[a.name] ?? 0), 0)
+    acc[type] = manualTotal + autoForType
     return acc
   }, {} as Record<string, number>)
+
+  // Show a section if it has manual assets OR a live auto-tracked value
+  const today = new Date().toISOString().split('T')[0]
+  const typesToShow = ASSET_TYPES.filter(
+    (type) =>
+      byType[type].length > 0 ||
+      AUTO_TRACKED.some((a) => a.type === type && autoValues[a.name] !== null)
+  )
 
   return (
     <div className="space-y-6">
@@ -88,7 +122,7 @@ export default function AssetsPage() {
       {/* Assets by type */}
       {loading ? (
         <div className="py-8 text-center text-[#555]">Loading...</div>
-      ) : assets.length === 0 ? (
+      ) : typesToShow.length === 0 ? (
         <Card>
           <p className="py-8 text-center text-[#555]">
             No assets yet.{' '}
@@ -103,59 +137,86 @@ export default function AssetsPage() {
           </p>
         </Card>
       ) : (
-        ASSET_TYPES.filter((type) => byType[type].length > 0).map((type) => (
-          <Card key={type}>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Badge variant={assetTypeBadge[type] ?? 'neutral'}>{type}</Badge>
-                <CardTitle>{type} Accounts</CardTitle>
-              </div>
-              <span className="tabular-nums text-sm text-white">
-                {formatCurrency(totalByType[type])}
-              </span>
-            </CardHeader>
-
-            <div className="space-y-3">
-              {byType[type].map((asset) => (
-                <div
-                  key={asset.id}
-                  className="flex items-center justify-between rounded-lg bg-[#111] px-4 py-3"
-                >
-                  <div>
-                    <p className="font-medium text-white">{asset.asset_name}</p>
-                    <p className="text-xs text-[#555]">
-                      Updated {formatDate(asset.as_of_date)}
-                      {asset.notes && ` · ${asset.notes}`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <p className="tabular-nums text-xl font-semibold text-white">
-                      {formatCurrency(asset.current_value)}
-                    </p>
-                    {isEditor && (
-                      <div className="flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setEditingAsset(asset)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => handleDelete(asset.id)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    )}
-                  </div>
+        typesToShow.map((type) => {
+          const autoEntries = AUTO_TRACKED.filter(
+            (a) => a.type === type && autoValues[a.name] !== null
+          )
+          return (
+            <Card key={type}>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Badge variant={assetTypeBadge[type] ?? 'neutral'}>{type}</Badge>
+                  <CardTitle>{type} Accounts</CardTitle>
                 </div>
-              ))}
-            </div>
-          </Card>
-        ))
+                <span className="tabular-nums text-sm text-white">
+                  {formatCurrency(totalByType[type])}
+                </span>
+              </CardHeader>
+
+              <div className="space-y-3">
+                {/* Auto-tracked investment accounts (read-only) */}
+                {autoEntries.map((entry) => (
+                  <div
+                    key={entry.name}
+                    className="flex items-center justify-between rounded-lg bg-[#111] px-4 py-3"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-white">{entry.name}</p>
+                        <span className="rounded-full bg-indigo-900/50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-indigo-400">
+                          Auto
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#555]">Updated daily · as of {today}</p>
+                    </div>
+                    <p className="tabular-nums text-xl font-semibold text-white">
+                      {formatCurrency(autoValues[entry.name] ?? 0)}
+                    </p>
+                  </div>
+                ))}
+
+                {/* Manually-entered assets */}
+                {byType[type].map((asset) => (
+                  <div
+                    key={asset.id}
+                    className="flex items-center justify-between rounded-lg bg-[#111] px-4 py-3"
+                  >
+                    <div>
+                      <p className="font-medium text-white">{asset.asset_name}</p>
+                      <p className="text-xs text-[#555]">
+                        Updated {formatDate(asset.as_of_date)}
+                        {asset.notes && ` · ${asset.notes}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <p className="tabular-nums text-xl font-semibold text-white">
+                        {formatCurrency(asset.current_value)}
+                      </p>
+                      {isEditor && (
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingAsset(asset)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={() => handleDelete(asset.id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )
+        })
       )}
 
       {/* Add Modal */}
