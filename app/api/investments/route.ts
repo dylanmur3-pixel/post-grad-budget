@@ -3,25 +3,49 @@ import { supabaseAdmin } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 
-// Fetch 1 year of daily closing prices for a ticker from Yahoo Finance (unofficial free API).
-async function fetchYahooHistory(ticker: string): Promise<Array<{ ts: number; close: number }>> {
+// Fetch 1 year of daily closing prices for a ticker from Yahoo Finance.
+// Returns raw adjclose history, the previous close, and the live market price.
+// Split correction is intentionally NOT done here — it is applied later in the
+// enrichedHoldings loop using the sheet's current price as the authoritative reference,
+// since Yahoo's own regularMarketPrice can itself be stale on the day of a split.
+async function fetchYahooData(ticker: string): Promise<{
+  history: Array<{ ts: number; close: number }>
+  previousClose: number | null
+  marketPrice: number | null
+}> {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=1y&interval=1d`
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
       cache: 'no-store',
     })
-    if (!res.ok) return []
+    if (!res.ok) return { history: [], previousClose: null, marketPrice: null }
     const json = await res.json()
     const result = json?.chart?.result?.[0]
-    if (!result) return []
+    if (!result) return { history: [], previousClose: null, marketPrice: null }
+
     const timestamps: number[] = result.timestamp ?? []
-    const closes: number[] = result.indicators?.quote?.[0]?.close ?? []
-    return timestamps
-      .map((t: number, i: number) => ({ ts: t, close: closes[i] }))
+    // Prefer adjclose (split-adjusted); fall back to raw close if unavailable.
+    const adjCloses: number[] = result.indicators?.adjclose?.[0]?.adjclose ?? []
+    const rawCloses: number[] = result.indicators?.quote?.[0]?.close ?? []
+    const closesToUse = adjCloses.length > 0 ? adjCloses : rawCloses
+
+    const history = timestamps
+      .map((t: number, i: number) => ({ ts: t, close: closesToUse[i] }))
       .filter((d) => d.close != null && !isNaN(d.close))
+
+    const marketPrice: number | null = (result.meta?.regularMarketPrice ?? 0) > 0
+      ? result.meta.regularMarketPrice
+      : null
+
+    const rawPrevClose: number | null = result.meta?.regularMarketPreviousClose ?? null
+    const previousClose: number | null = rawPrevClose !== null
+      ? rawPrevClose
+      : history.length >= 2 ? history[history.length - 2].close : null
+
+    return { history, previousClose, marketPrice }
   } catch {
-    return []
+    return { history: [], previousClose: null, marketPrice: null }
   }
 }
 
@@ -101,48 +125,83 @@ export async function GET() {
 
   // Columns: Ticker(0) | Name(1) | Shares(2) | Buy Price(3) | Current Price(4)
   //          Current Value(5) | Gain/Loss $(6) | Gain/Loss %(7) | Cost Basis(8)
-  let currentValue = 0
-  let costBasis = 0
-  const holdings = []
-
-  for (const row of dataRows) {
-    const val = parseMoney(row[5])
-    const cost = parseMoney(row[8])
-    if (!isNaN(val)) currentValue += val
-    if (!isNaN(cost)) costBasis += cost
-    holdings.push({
+  // NOTE: We compute gainLoss and costBasis from raw primitives (shares × buyPrice)
+  // rather than reading the sheet's formula columns, which can be stale after a stock split.
+  // We also use Yahoo Finance price as a fallback if the sheet's GOOGLEFINANCE formula returns 0.
+  const holdingsRaw = dataRows.map((row) => {
+    const shares = parseFloat(row[2])
+    const buyPrice = parseMoney(row[3])
+    const currentPriceFromSheet = parseMoney(row[4])
+    const currentValueFromSheet = parseMoney(row[5])
+    const costBasis = !isNaN(shares) && !isNaN(buyPrice) ? shares * buyPrice : 0
+    return {
       ticker: row[0].trim(),
       name: row[1].trim(),
-      shares: parseFloat(row[2]),
-      buyPrice: parseMoney(row[3]),
-      currentPrice: parseMoney(row[4]),
-      currentValue: isNaN(val) ? 0 : val,
-      gainLoss: parseMoney(row[6]),
-      gainLossPct: Math.round(parseFloat(row[7]) * 10000) / 100,
-      costBasis: isNaN(cost) ? 0 : cost,
+      shares: isNaN(shares) ? 0 : shares,
+      buyPrice: isNaN(buyPrice) ? 0 : buyPrice,
+      currentPriceFromSheet: isNaN(currentPriceFromSheet) ? 0 : currentPriceFromSheet,
+      currentValueFromSheet: isNaN(currentValueFromSheet) ? 0 : currentValueFromSheet,
+      costBasis,
       dateBought: (row[9] ?? '').trim(),
-    })
-  }
+    }
+  })
+
+  // 3. Fetch Yahoo Finance price history for each holding in parallel.
+  //    Done early so Yahoo prices can serve as fallback if the sheet's GOOGLEFINANCE returns 0.
+  const yahooData = await Promise.all(
+    holdingsRaw.map(async (h) => ({ ticker: h.ticker, ...(await fetchYahooData(h.ticker)) }))
+  )
+  const histMap = new Map(yahooData.map((r) => [r.ticker, r.history]))
+  const prevCloseMap = new Map(yahooData.map((r) => [r.ticker, r.previousClose]))
+  const marketPriceMap = new Map(yahooData.map((r) => [r.ticker, r.marketPrice]))
+
+  // 4. Build final holdings. Use Yahoo's live price as fallback when sheet price is 0
+  //    (happens when GOOGLEFINANCE formula is temporarily unavailable in the published CSV).
+  let currentValue = 0
+  let costBasis = 0
+  const holdings = holdingsRaw.map((h) => {
+    let currentPrice = h.currentPriceFromSheet
+    if ((currentPrice === 0 || isNaN(currentPrice)) && marketPriceMap.get(h.ticker)) {
+      currentPrice = marketPriceMap.get(h.ticker)!
+    }
+    const currentValueFinal = h.shares > 0 && currentPrice > 0
+      ? Math.round(currentPrice * h.shares * 100) / 100
+      : h.currentValueFromSheet
+    const gainLoss = currentPrice > 0 && h.buyPrice > 0
+      ? Math.round((currentPrice - h.buyPrice) * h.shares * 100) / 100
+      : 0
+    const gainLossPct = currentPrice > 0 && h.buyPrice > 0
+      ? Math.round(((currentPrice - h.buyPrice) / h.buyPrice) * 100 * 100) / 100
+      : 0
+    currentValue += currentValueFinal
+    if (h.costBasis > 0) costBasis += h.costBasis
+    return {
+      ticker: h.ticker,
+      name: h.name,
+      shares: h.shares,
+      buyPrice: h.buyPrice,
+      currentPrice,
+      currentValue: currentValueFinal,
+      gainLoss,
+      gainLossPct,
+      costBasis: h.costBasis,
+      dateBought: h.dateBought,
+    }
+  })
 
   const gainLoss = currentValue - costBasis
   const returnPct = costBasis > 0 ? (gainLoss / costBasis) * 100 : 0
 
-  // 3. Store today's snapshot in Supabase if not already saved
+  // 5. Upsert today's snapshot — always update so a bad value saved earlier gets corrected.
   const today = new Date().toISOString().split('T')[0]
 
-  const { data: existing } = await supabaseAdmin
-    .from('portfolio_snapshots')
-    .select('id')
-    .eq('date', today)
-    .maybeSingle()
-
-  if (!existing && currentValue > 0) {
+  if (currentValue > 0) {
     await supabaseAdmin
       .from('portfolio_snapshots')
-      .insert({ date: today, total_value: Math.round(currentValue * 100) / 100 })
+      .upsert({ date: today, total_value: Math.round(currentValue * 100) / 100 }, { onConflict: 'date' })
   }
 
-  // 4. Fetch all historical snapshots for the chart
+  // 6. Fetch all historical snapshots for the chart
   const { data: history, error: histError } = await supabaseAdmin
     .from('portfolio_snapshots')
     .select('date, total_value')
@@ -152,17 +211,9 @@ export async function GET() {
     return NextResponse.json({ error: histError.message }, { status: 500 })
   }
 
-  // 5. Fetch Yahoo Finance price history for each holding in parallel, then
-  //    calculate period returns (1D, 1W, 1M, 6M, YTD) per holding.
-  const yahooData = await Promise.all(
-    holdings.map(async (h) => ({ ticker: h.ticker, hist: await fetchYahooHistory(h.ticker) }))
-  )
-  const histMap = new Map(yahooData.map((r) => [r.ticker, r.hist]))
-
   const now = new Date()
   // Reference date for each period: end-of-day on the target calendar date.
   const periodDates: Record<string, Date> = {
-    '1D': (() => { const d = new Date(now); d.setDate(d.getDate() - 1); d.setHours(23, 59, 59); return d })(),
     '1W': (() => { const d = new Date(now); d.setDate(d.getDate() - 7); d.setHours(23, 59, 59); return d })(),
     '1M': (() => { const d = new Date(now); d.setMonth(d.getMonth() - 1); d.setHours(23, 59, 59); return d })(),
     '6M': (() => { const d = new Date(now); d.setMonth(d.getMonth() - 6); d.setHours(23, 59, 59); return d })(),
@@ -171,17 +222,45 @@ export async function GET() {
 
   const enrichedHoldings = holdings.map((h) => {
     const hist = histMap.get(h.ticker) ?? []
+    const previousClose = prevCloseMap.get(h.ticker) ?? null
     const purchaseDate = h.dateBought ? new Date(h.dateBought + 'T00:00:00') : null
+
+    // Correct pre-split prices using the sheet's current price as the authoritative reference.
+    // Yahoo's adjclose and previousClose can be partially or fully unadjusted on the day of
+    // a split. We use h.currentPrice (from the sheet, always correct) to detect any price
+    // that is clearly pre-split (>1.5x current) and divide by the implied integer ratio.
+    // This safely handles 1D and 1W lookbacks without risking false positives on longer
+    // periods (a genuine 33%+ drop in one day or one week is essentially impossible for ETFs).
+    const fixPrice = (price: number | null): number | null => {
+      if (price === null || h.currentPrice <= 0) return price
+      if (price > h.currentPrice * 1.5) {
+        const ratio = Math.round(price / h.currentPrice)
+        if (ratio >= 2 && ratio <= 20) return Math.round((price / ratio) * 10000) / 10000
+      }
+      return price
+    }
+    const correctedPreviousClose = fixPrice(previousClose)
+    const correctedHist = hist.map((d) => {
+      const fixed = fixPrice(d.close)
+      return fixed !== null && fixed !== d.close ? { ...d, close: fixed } : d
+    })
+
     const periodReturns: Record<string, { gainLoss: number | null; gainLossPct: number | null }> = {
       All: { gainLoss: h.gainLoss, gainLossPct: h.gainLossPct },
     }
+
+    const yesterday = (() => { const d = new Date(now); d.setDate(d.getDate() - 1); return d })()
+    if (purchaseDate && yesterday < purchaseDate) {
+      periodReturns['1D'] = calcPeriodReturn(h.shares, h.currentPrice, h.buyPrice)
+    } else {
+      periodReturns['1D'] = calcPeriodReturn(h.shares, h.currentPrice, correctedPreviousClose)
+    }
+
     for (const [range, date] of Object.entries(periodDates)) {
-      // If the period started before the purchase date, cap at buy price
-      // so it shows return since purchase rather than market return before ownership.
       if (purchaseDate && date < purchaseDate) {
         periodReturns[range] = calcPeriodReturn(h.shares, h.currentPrice, h.buyPrice)
       } else {
-        const price = priceAtDate(hist, date)
+        const price = priceAtDate(correctedHist, date)
         periodReturns[range] = calcPeriodReturn(h.shares, h.currentPrice, price)
       }
     }
