@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
 
 // GET /api/summaries — fetch monthly summaries for trends (public)
 // Query params: months=6 (how many recent months)
@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const months = parseInt(searchParams.get('months') ?? '12')
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('monthly_summaries')
     .select('*')
     .order('month_year', { ascending: false })

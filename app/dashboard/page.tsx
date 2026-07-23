@@ -27,6 +27,10 @@ export default function DashboardPage() {
   const [assets, setAssets] = useState<Asset[]>([])
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [incomeEntries, setIncomeEntries] = useState<{ amount: number }[]>([])
+  const [autoValues, setAutoValues] = useState<Record<string, number | null>>({
+    'ETF Portfolio': null,
+    'Roth IRA': null,
+  })
   const [loading, setLoading] = useState(true)
   const [showTakeHomeModal, setShowTakeHomeModal] = useState(false)
   const [takeHomeInput, setTakeHomeInput] = useState('')
@@ -40,12 +44,18 @@ export default function DashboardPage() {
       fetch('/api/assets').then((r) => r.json()),
       fetch('/api/settings').then((r) => r.json()),
       fetch(`/api/income?month_year=${monthYear}`).then((r) => r.json()),
-    ]).then(([exp, bud, ass, set, inc]) => {
+      fetch('/api/investments').then((r) => r.json()).catch(() => null),
+      fetch('/api/investments/roth-ira').then((r) => r.json()).catch(() => null),
+    ]).then(([exp, bud, ass, set, inc, etf, roth]) => {
       setExpenses(Array.isArray(exp) ? exp : [])
       setBudgets(Array.isArray(bud) ? bud : [])
       setAssets(Array.isArray(ass) ? ass : [])
       if (set && !set.error) setSettings(set)
       setIncomeEntries(Array.isArray(inc) ? inc : [])
+      setAutoValues({
+        'ETF Portfolio': typeof etf?.currentValue === 'number' ? etf.currentValue : null,
+        'Roth IRA': typeof roth?.currentValue === 'number' ? roth.currentValue : null,
+      })
       setLoading(false)
     })
   }, [monthYear])
@@ -70,7 +80,8 @@ export default function DashboardPage() {
   const effectiveIncome = loggedIncome > 0 ? loggedIncome : takeHome
   const remaining = effectiveIncome - totalExpenses
   const savingsRate = calcSavingsRate(effectiveIncome, totalExpenses)
-  const netWorth = assets.reduce((s, a) => s + a.current_value, 0)
+  const autoTotal = Object.values(autoValues).reduce<number>((s, v) => s + (v ?? 0), 0)
+  const netWorth = assets.reduce((s, a) => s + a.current_value, 0) + autoTotal
 
   const barData = CATEGORIES.map((cat) => ({
     category: cat,
@@ -246,8 +257,26 @@ export default function DashboardPage() {
           </p>
           <p className="mb-1 text-sm text-[#555]">total across all accounts</p>
         </div>
-        {assets.length > 0 && (
+        {(assets.length > 0 || autoTotal > 0) && (
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {autoValues['ETF Portfolio'] !== null && (
+              <div className="rounded-lg bg-[#111] p-3">
+                <p className="text-xs text-[#555]">Investment</p>
+                <p className="text-sm font-medium text-white">ETF Portfolio</p>
+                <p className="mt-1 tabular-nums text-lg font-semibold text-white">
+                  {formatCurrency(autoValues['ETF Portfolio']!)}
+                </p>
+              </div>
+            )}
+            {autoValues['Roth IRA'] !== null && (
+              <div className="rounded-lg bg-[#111] p-3">
+                <p className="text-xs text-[#555]">Retirement</p>
+                <p className="text-sm font-medium text-white">Roth IRA</p>
+                <p className="mt-1 tabular-nums text-lg font-semibold text-white">
+                  {formatCurrency(autoValues['Roth IRA']!)}
+                </p>
+              </div>
+            )}
             {assets.map((asset) => (
               <div key={asset.id} className="rounded-lg bg-[#111] p-3">
                 <p className="text-xs text-[#555]">{asset.asset_type}</p>
