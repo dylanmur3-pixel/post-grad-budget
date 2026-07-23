@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Modal } from '@/components/ui/Modal'
-import { formatCurrency, formatDate, currentMonthYear, formatMonth } from '@/lib/utils'
+import { formatCurrency, formatDate, currentMonthYear, formatMonth, toMonthYear } from '@/lib/utils'
 import { INCOME_SOURCES } from '@/lib/constants'
 import type { Income } from '@/lib/types'
 
@@ -67,7 +67,7 @@ export default function IncomePage() {
         date: formDate,
         source: formSource,
         amount: parseFloat(formAmount),
-        month_year: selectedMonth,
+        month_year: toMonthYear(formDate),
         notes: formNotes || null,
       }),
     })
@@ -77,13 +77,19 @@ export default function IncomePage() {
       setFormSubmitting(false)
       return
     }
-    setIncome((prev) => [data, ...prev])
     setShowAddModal(false)
     setFormDate('')
     setFormSource(INCOME_SOURCES[0])
     setFormAmount('')
     setFormNotes('')
     setFormSubmitting(false)
+    if (data.month_year === selectedMonth) {
+      setIncome((prev) => [data, ...prev])
+    } else {
+      // The entry belongs to a different month than what's currently shown —
+      // switch the filter to it so the new entry (and its real month) is visible.
+      setSelectedMonth(data.month_year)
+    }
   }
 
   const handleDelete = async (id: number) => {

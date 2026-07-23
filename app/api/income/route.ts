@@ -19,6 +19,29 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(data, { headers: { 'Cache-Control': 'no-store' } })
 }
 
+// Paycheck income sources that should also land in the checking account.
+const PAYCHECK_SOURCES = ['Base Salary', 'Bonus']
+
+// Nudge the BofA Checking balance by `delta` (positive to add, negative to reverse).
+async function adjustCheckingBalance(delta: number) {
+  const { data: checking } = await supabaseAdmin
+    .from('assets')
+    .select('id, current_value')
+    .eq('asset_name', 'BofA Checking')
+    .single()
+
+  if (!checking) return
+
+  await supabaseAdmin
+    .from('assets')
+    .update({
+      current_value: Number(checking.current_value) + delta,
+      as_of_date: new Date().toISOString().slice(0, 10),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', checking.id)
+}
+
 // POST /api/income — add income entry (editor only)
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -38,5 +61,10 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  if (PAYCHECK_SOURCES.includes(source)) {
+    await adjustCheckingBalance(amount)
+  }
+
   return NextResponse.json(data, { status: 201 })
 }
