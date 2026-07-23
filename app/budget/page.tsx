@@ -211,16 +211,23 @@ export default function BudgetPage() {
                               </div>
                             ) : (
                               <button
+                                type="button"
                                 className={cn(
-                                  'tabular-nums text-white',
-                                  isEditor && 'cursor-pointer hover:text-indigo-400'
+                                  '-mx-2 -my-1 rounded px-2 py-1 tabular-nums text-white transition-colors',
+                                  isEditor
+                                    ? 'cursor-pointer hover:bg-[#1f1f1f] hover:text-indigo-400'
+                                    : 'cursor-pointer hover:bg-[#1f1f1f]'
                                 )}
                                 onClick={() => {
-                                  if (!isEditor) return
+                                  if (!isEditor) {
+                                    setSaveError('You need to be logged in as editor to edit budget targets.')
+                                    return
+                                  }
+                                  setSaveError('')
                                   setEditingId(b.id)
                                   setEditValue(b.monthly_target.toString())
                                 }}
-                                title={isEditor ? 'Click to edit' : undefined}
+                                title={isEditor ? 'Click to edit' : 'Log in as editor to edit'}
                               >
                                 {formatCurrency(b.monthly_target)}
                               </button>
