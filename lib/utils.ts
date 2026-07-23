@@ -1,8 +1,8 @@
 import { format, parseISO } from 'date-fns'
 import { USD, USD_CENTS } from './constants'
 
-// Format a number as currency: $1,234 or $1,234.56
-export function formatCurrency(amount: number, showCents = false): string {
+// Format a number as currency: $1,234.56
+export function formatCurrency(amount: number, showCents = true): string {
   return showCents ? USD_CENTS.format(amount) : USD.format(amount)
 }
 
