@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   }
 
   const [expensesRes, settingsRes] = await Promise.all([
-    supabase.from('expenses').select('*').in('month_year', monthKeys),
+    supabase.from('expenses').select('*').eq('status', 'confirmed').in('month_year', monthKeys),
     supabase.from('app_settings').select('monthly_take_home').limit(1).single(),
   ])
 

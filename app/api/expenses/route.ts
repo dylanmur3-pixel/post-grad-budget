@@ -5,16 +5,21 @@ import { supabaseAdmin } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 
-// GET /api/expenses — fetch all expenses (public)
-// Query params: month_year=2026-06
+// GET /api/expenses — fetch expenses (public)
+// Query params: month_year=2026-06, status=confirmed|needs_review|all (defaults to confirmed)
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const monthYear = searchParams.get('month_year')
+  const status = searchParams.get('status') ?? 'confirmed'
 
   let query = supabaseAdmin.from('expenses').select('*').order('date', { ascending: false })
 
   if (monthYear) {
     query = query.eq('month_year', monthYear)
+  }
+
+  if (status !== 'all') {
+    query = query.eq('status', status)
   }
 
   const { data, error } = await query

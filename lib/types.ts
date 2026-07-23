@@ -20,6 +20,29 @@ export interface Expense {
   amount: number
   month_year: string
   created_at: string
+  status: 'confirmed' | 'needs_review'
+  source: 'manual' | 'auto'
+  email_message_id?: string | null
+  merchant_raw?: string | null
+}
+
+// A row still awaiting categorization — category/subcategory aren't set yet.
+// Only ever returned by GET /api/review (status='needs_review'); every row
+// the rest of the app reads via GET /api/expenses is a full Expense.
+export interface PendingExpense extends Omit<Expense, 'category' | 'subcategory'> {
+  category: string | null
+  subcategory: string | null
+}
+
+export interface MerchantCategoryMap {
+  id: number
+  merchant_key: string
+  merchant_label?: string
+  category: string
+  subcategory: string
+  notes?: string
+  created_at: string
+  updated_at: string
 }
 
 export interface Income {
