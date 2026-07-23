@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { supabaseAdmin } from '@/lib/supabase'
+import { adjustCheckingBalance, PAYCHECK_SOURCES } from '@/lib/checking'
 
 export const dynamic = 'force-dynamic'
-
-const PAYCHECK_SOURCES = ['Base Salary', 'Bonus']
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
@@ -23,24 +22,10 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const { error } = await supabaseAdmin.from('income').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  let checkingSyncWarning: string | null = null
   if (entry && PAYCHECK_SOURCES.includes(entry.source)) {
-    const { data: checking } = await supabaseAdmin
-      .from('assets')
-      .select('id, current_value')
-      .eq('asset_name', 'BofA Checking')
-      .single()
-
-    if (checking) {
-      await supabaseAdmin
-        .from('assets')
-        .update({
-          current_value: Number(checking.current_value) - Number(entry.amount),
-          as_of_date: new Date().toISOString().slice(0, 10),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', checking.id)
-    }
+    checkingSyncWarning = await adjustCheckingBalance(-Number(entry.amount))
   }
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, checkingSyncWarning })
 }

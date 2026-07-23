@@ -21,6 +21,9 @@ export default function BudgetPage() {
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editValue, setEditValue] = useState('')
+  const [editingActualId, setEditingActualId] = useState<number | null>(null)
+  const [actualValue, setActualValue] = useState('')
+  const [actualSaving, setActualSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -83,6 +86,42 @@ export default function BudgetPage() {
     setSaving(false)
   }
 
+  // Logs a real expense against a subcategory directly from the Budget page —
+  // adds to (not overwrites) the Actual total, same as logging via /expenses/new.
+  const handleAddActual = async (b: BudgetTarget) => {
+    const value = parseFloat(actualValue)
+    if (isNaN(value) || value <= 0) return
+
+    setActualSaving(true)
+    setSaveError('')
+    try {
+      const res = await fetch('/api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: new Date().toISOString().slice(0, 10),
+          category: b.category,
+          subcategory: b.subcategory,
+          description: b.subcategory,
+          amount: value,
+          month_year: monthYear,
+        }),
+      })
+      const text = await res.text()
+      const json = text ? JSON.parse(text) : {}
+      if (!res.ok) {
+        setSaveError(`Save failed (${res.status}): ${json.error ?? text ?? 'unknown error'}`)
+      } else {
+        setExpenses((prev) => [...prev, json])
+        setEditingActualId(null)
+        setActualValue('')
+      }
+    } catch (err: any) {
+      setSaveError(`Network error: ${err.message}`)
+    }
+    setActualSaving(false)
+  }
+
   const totalBudget = budgets.reduce((s, b) => s + b.monthly_target, 0)
   const totalActual = expenses.reduce((s, e) => s + e.amount, 0)
 
@@ -96,7 +135,7 @@ export default function BudgetPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-white">Budget</h1>
-        <p className="text-sm text-[#555]">Planned vs actual — click any target to edit</p>
+        <p className="text-sm text-[#555]">Click Budget to change your target, click Actual to log a real expense</p>
       </div>
 
       {/* Summary row */}
@@ -224,6 +263,7 @@ export default function BudgetPage() {
                                     return
                                   }
                                   setSaveError('')
+                                  setEditingActualId(null)
                                   setEditingId(b.id)
                                   setEditValue(b.monthly_target.toString())
                                 }}
@@ -233,8 +273,51 @@ export default function BudgetPage() {
                               </button>
                             )}
                           </td>
-                          <td className="py-3 text-right tabular-nums text-white">
-                            {formatCurrency(actual)}
+                          <td className="py-3 text-right">
+                            {editingActualId === b.id ? (
+                              <div className="flex items-center justify-end gap-2">
+                                <Input
+                                  type="number"
+                                  value={actualValue}
+                                  onChange={(e) => setActualValue(e.target.value)}
+                                  className="w-28 text-right"
+                                  placeholder="0.00"
+                                  autoFocus
+                                />
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleAddActual(b)}
+                                  disabled={actualSaving}
+                                >
+                                  Add
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => { setEditingActualId(null); setActualValue('') }}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                className="-mx-2 -my-1 cursor-pointer rounded px-2 py-1 tabular-nums text-white transition-colors hover:bg-[#1f1f1f] hover:text-indigo-400"
+                                onClick={() => {
+                                  if (!isEditor) {
+                                    setSaveError('You need to be logged in as editor to log an expense.')
+                                    return
+                                  }
+                                  setSaveError('')
+                                  setEditingId(null)
+                                  setEditingActualId(b.id)
+                                  setActualValue('')
+                                }}
+                                title={isEditor ? 'Click to log an expense (adds to this total)' : 'Log in as editor to log an expense'}
+                              >
+                                {formatCurrency(actual)}
+                              </button>
+                            )}
                           </td>
                           <td className="py-3 text-right">
                             {pct === 0 ? (

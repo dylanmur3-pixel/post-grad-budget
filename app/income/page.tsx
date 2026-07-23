@@ -32,6 +32,7 @@ export default function IncomePage() {
   const [income, setIncome] = useState<Income[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [syncWarning, setSyncWarning] = useState('')
 
   // Form state
   const [formDate, setFormDate] = useState('')
@@ -83,6 +84,9 @@ export default function IncomePage() {
     setFormAmount('')
     setFormNotes('')
     setFormSubmitting(false)
+    if (data.checkingSyncWarning) {
+      setSyncWarning(data.checkingSyncWarning)
+    }
     if (data.month_year === selectedMonth) {
       setIncome((prev) => [data, ...prev])
     } else {
@@ -94,7 +98,11 @@ export default function IncomePage() {
 
   const handleDelete = async (id: number) => {
     if (!confirm('Delete this income entry?')) return
-    await fetch(`/api/income/${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/income/${id}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.checkingSyncWarning) {
+      setSyncWarning(data.checkingSyncWarning)
+    }
     setIncome((prev) => prev.filter((i) => i.id !== id))
   }
 
@@ -109,6 +117,13 @@ export default function IncomePage() {
           <Button onClick={() => setShowAddModal(true)}>+ Add Income</Button>
         )}
       </div>
+
+      {syncWarning && (
+        <div className="flex items-start justify-between gap-3 rounded bg-yellow-900/30 px-4 py-3 text-sm text-yellow-400">
+          <span>{syncWarning} — your BofA Checking balance on the Assets page was NOT updated. You'll need to adjust it manually.</span>
+          <button onClick={() => setSyncWarning('')} className="shrink-0 text-yellow-400/70 hover:text-yellow-400">✕</button>
+        </div>
+      )}
 
       {/* Month selector */}
       <Select
