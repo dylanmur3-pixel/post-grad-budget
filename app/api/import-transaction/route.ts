@@ -41,11 +41,30 @@ export async function POST(req: NextRequest) {
   }
 
   const merchant_key = normalizeMerchantKey(merchant_raw)
-  const { data: mapping } = await supabaseAdmin
+
+  // Exact match first — a specific location the user has confirmed before
+  // (e.g. a particular store number) always wins over a generic brand rule.
+  const { data: exactMapping } = await supabaseAdmin
     .from('merchant_category_map')
     .select('category, subcategory')
     .eq('merchant_key', merchant_key)
     .maybeSingle()
+
+  // Fall back to brand-level matching: does the merchant string contain a
+  // known brand key anywhere in it (e.g. "CHEVRON" inside "CHEVRON 0099266
+  // SANTA MONICA USA")? Longest matching key wins if more than one brand
+  // name happens to appear in the string.
+  let mapping = exactMapping
+  if (!mapping) {
+    const { data: allMappings } = await supabaseAdmin
+      .from('merchant_category_map')
+      .select('merchant_key, category, subcategory')
+
+    mapping =
+      (allMappings ?? [])
+        .filter((m) => merchant_key.includes(m.merchant_key))
+        .sort((a, b) => b.merchant_key.length - a.merchant_key.length)[0] ?? null
+  }
 
   const { data, error } = await supabaseAdmin
     .from('expenses')
