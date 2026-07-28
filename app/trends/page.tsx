@@ -16,6 +16,7 @@ type TrendSummary = {
   food_health_actual: number
   transport_actual: number
   investing_actual: number
+  misc_actual: number
 }
 
 const RANGE_OPTIONS = [

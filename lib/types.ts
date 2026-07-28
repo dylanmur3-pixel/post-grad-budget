@@ -74,10 +74,12 @@ export interface MonthlySummary {
   food_health_actual: number
   transport_actual: number
   investing_actual: number
+  misc_actual: number
   housing_budget: number
   food_health_budget: number
   transport_budget: number
   investing_budget: number
+  misc_budget: number
   savings_rate: number
   net_cashflow: number
   created_at: string

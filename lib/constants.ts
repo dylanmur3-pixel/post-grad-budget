@@ -5,6 +5,7 @@ export const CATEGORIES = [
   'Food & Health',
   'Transport',
   'Investing & Savings',
+  'Miscellaneous',
 ] as const
 
 export type Category = typeof CATEGORIES[number]
@@ -38,6 +39,11 @@ export const SUBCATEGORIES: Record<Category, string[]> = {
     'Roth IRA',
     'Emergency Fund',
   ],
+  'Miscellaneous': [
+    'Shopping',
+    'Gifts',
+    'Other',
+  ],
 }
 
 // Chart and UI colors for each category
@@ -46,6 +52,7 @@ export const CATEGORY_COLORS: Record<Category, string> = {
   'Food & Health': '#22d3ee',          // cyan
   'Transport': '#f59e0b',              // amber
   'Investing & Savings': '#22c55e',    // green
+  'Miscellaneous': '#a855f7',          // purple
 }
 
 // Hex values for Recharts (must be plain hex)
@@ -54,6 +61,7 @@ export const CATEGORY_COLORS_HEX: Record<string, string> = {
   food_health: '#22d3ee',
   transport: '#f59e0b',
   investing: '#22c55e',
+  misc: '#a855f7',
 }
 
 // Maps category names to the summary table column prefix
@@ -62,6 +70,7 @@ export const CATEGORY_TO_KEY: Record<Category, string> = {
   'Food & Health': 'food_health',
   'Transport': 'transport',
   'Investing & Savings': 'investing',
+  'Miscellaneous': 'misc',
 }
 
 export const INCOME_SOURCES = ['Base Salary', 'Bonus', 'Other'] as const

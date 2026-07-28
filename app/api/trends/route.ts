@@ -48,6 +48,9 @@ export async function GET(req: NextRequest) {
     const investing_actual = monthExpenses
       .filter((e) => e.category === 'Investing & Savings')
       .reduce((s, e) => s + e.amount, 0)
+    const misc_actual = monthExpenses
+      .filter((e) => e.category === 'Miscellaneous')
+      .reduce((s, e) => s + e.amount, 0)
 
     return {
       month_year,
@@ -59,6 +62,7 @@ export async function GET(req: NextRequest) {
       food_health_actual,
       transport_actual,
       investing_actual,
+      misc_actual,
     }
   })
 
