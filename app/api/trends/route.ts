@@ -3,7 +3,7 @@ import { supabaseAdmin as supabase } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 
-// GET /api/trends — compute monthly summaries live from expenses + app_settings
+// GET /api/trends — compute monthly summaries live from expenses + income
 // Query params: months=6
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -18,21 +18,23 @@ export async function GET(req: NextRequest) {
     monthKeys.push(key)
   }
 
-  const [expensesRes, settingsRes] = await Promise.all([
+  const [expensesRes, incomeRes] = await Promise.all([
     supabase.from('expenses').select('*').eq('status', 'confirmed').in('month_year', monthKeys),
-    supabase.from('app_settings').select('monthly_take_home').limit(1).single(),
+    supabase.from('income').select('amount, month_year').in('month_year', monthKeys),
   ])
 
   if (expensesRes.error) return NextResponse.json({ error: expensesRes.error.message }, { status: 500 })
+  if (incomeRes.error) return NextResponse.json({ error: incomeRes.error.message }, { status: 500 })
 
   const expenses = expensesRes.data ?? []
-  const monthly_take_home = settingsRes.data?.monthly_take_home ?? 4805
+  const income = incomeRes.data ?? []
 
   const summaries = monthKeys.map((month_year) => {
     const monthExpenses = expenses.filter((e) => e.month_year === month_year)
+    const monthIncome = income.filter((i) => i.month_year === month_year)
 
     const total_expenses = monthExpenses.reduce((s, e) => s + e.amount, 0)
-    const total_income = monthly_take_home
+    const total_income = monthIncome.reduce((s, i) => s + i.amount, 0)
     const net_cashflow = total_income - total_expenses
     const savings_rate = total_income > 0 ? (net_cashflow / total_income) * 100 : 0
 
